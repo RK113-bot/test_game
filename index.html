@@ -1,0 +1,287 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tetris-like Game</title>
+    <style>
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background-color: #eee;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="320" height="640"></canvas>
+    <script>
+        window.onload = function () {
+            const canvas = document.getElementById('gameCanvas');
+            const context = canvas.getContext('2d');
+            const blockSize = 32;
+            const boardWidth = 10;
+            const boardHeight = 20;
+            const board = createEmptyBoard();
+            let currentBlock = createBlock();
+            let nextBlock = createBlock();
+            let gameInterval = null;
+            let isPaused = false;
+            let score = 0;
+
+            function createEmptyBoard() {
+                const board = [];
+                for (let y = 0; y < boardHeight; y++) {
+                    board[y] = [];
+                    for (let x = 0; x < boardWidth; x++) {
+                        board[y][x] = 0;
+                    }
+                }
+                return board;
+            }
+
+            function createBlock() {
+                const blocks = [
+                    // I
+                    {
+                        shape: [
+                            [1, 1, 1, 1]
+                        ],
+                        color: 'cyan'
+                    },
+                    // J
+                    {
+                        shape: [
+                            [1, 0, 0],
+                            [1, 1, 1]
+                        ],
+                        color: 'blue'
+                    },
+                    // L
+                    {
+                        shape: [
+                            [0, 0, 1],
+                            [1, 1, 1]
+                        ],
+                        color: 'orange'
+                    },
+                    // O
+                    {
+                        shape: [
+                            [1, 1],
+                            [1, 1]
+                        ],
+                        color: 'yellow'
+                    },
+                    // S
+                    {
+                        shape: [
+                            [0, 1, 1],
+                            [1, 1, 0]
+                        ],
+                        color: 'green'
+                    },
+                    // T
+                    {
+                        shape: [
+                            [0, 1, 0],
+                            [1, 1, 1]
+                        ],
+                        color: 'purple'
+                    },
+                    // Z
+                    {
+                        shape: [
+                            [1, 1, 0],
+                            [0, 1, 1]
+                        ],
+                        color: 'red'
+                    }
+                ];
+
+                const block = blocks[Math.floor(Math.random() * blocks.length)];
+                return {
+                    x: Math.floor(boardWidth / 2) - Math.ceil(block.shape[0].length / 2),
+                    y: 0,
+                    shape: block.shape,
+                    color: block.color
+                };
+            }
+
+            function drawBlock(block, offsetX = 0, offsetY = 0) {
+                context.fillStyle = block.color;
+                for (let y = 0; y < block.shape.length; y++) {
+                    for (let x = 0; x < block.shape[y].length; x++) {
+                          if (block.shape[y][x]) {
+                            context.fillRect((block.x + x) * blockSize + offsetX, (block.y + y) * blockSize + offsetY, blockSize, blockSize);
+                            context.strokeStyle = 'white';
+                            context.strokeRect((block.x + x) * blockSize + offsetX, (block.y + y) * blockSize + offsetY, blockSize, blockSize);
+                        }
+                    }
+                }
+            }
+
+            function drawBoard() {
+                for (let y = 0; y < boardHeight; y++) {
+                    for (let x = 0; x < boardWidth; x++) {
+                        if (board[y][x]) {
+                            context.fillStyle = board[y][x];
+                            context.fillRect(x * blockSize, y * blockSize, blockSize, blockSize);
+                            context.strokeStyle = 'white';
+                            context.strokeRect(x * blockSize, y * blockSize, blockSize, blockSize);
+                        }
+                    }
+                }
+            }
+
+            function drawScore() {
+                context.font = '20px Arial';
+                context.fillStyle = 'black';
+                context.fillText('Score: ' + score, 8, 20);
+            }
+
+            function mergeBlock() {
+                for (let y = 0; y < currentBlock.shape.length; y++) {
+                    for (let x = 0; x < currentBlock.shape[y].length; x++) {
+                        if (currentBlock.shape[y][x]) {
+                            board[currentBlock.y + y][currentBlock.x + x] = currentBlock.color;
+                        }
+                    }
+                }
+            }
+
+            function rotate() {
+                const prevShape = currentBlock.shape;
+                currentBlock.shape = currentBlock.shape[0].map((_, i) => currentBlock.shape.map(row => row[i])).reverse();
+                if (checkCollision(currentBlock, 0, 0)) {
+                    currentBlock.shape = prevShape;
+                }
+            }
+
+            function move(dir) {
+                if (!checkCollision(currentBlock, dir, 0)) {
+                    currentBlock.x += dir;
+                }
+            }
+
+            function checkCollision(block, dx, dy) {
+                for (let y = 0; y < block.shape.length; y++) {
+                    for (let x = 0; x < block.shape[y].length; x++) {
+                        if (block.shape[y][x] && (board[block.y + y + dy] && board[block.y + y + dy][block.x + x + dx]) !== 0) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            function clearLines() {
+                outer: for (let y = boardHeight - 1; y >= 0; y--) {
+                    for (let x = 0; x < boardWidth; x++) {
+                        if (!board[y][x]) {
+                            continue outer;
+                        }
+                    }
+
+                    board.splice(y, 1);
+                    board.unshift(Array(boardWidth).fill(0));
+                    score += 100;
+                }
+            }
+
+            function updateGame() {
+                if (!checkCollision(currentBlock, 0, 1)) {
+                    currentBlock.y++;
+                } else {
+                    mergeBlock();
+                    clearLines();
+                    currentBlock = nextBlock;
+                    nextBlock = createBlock();
+                    if (checkCollision(currentBlock, 0, 0)) {
+                        // Game over
+                        clearInterval(gameInterval);
+                        context.font = '30px Arial';
+                        context.fillStyle = 'red';
+                        context.fillText('Game Over', canvas.width / 4, canvas.height / 2);
+                        return;
+                    }
+                }
+            }
+
+
+            document.onkeydown = function (e) {
+                if (isPaused) return;
+                switch (e.key) {
+                    case 'ArrowUp':
+                        rotate();
+                        break;
+                    case 'ArrowRight':
+                        move(1);
+                        break;
+                    case 'ArrowLeft':
+                        move(-1);
+                        break;
+                    case 'ArrowDown':
+                        if (!checkCollision(currentBlock, 0, 1)) {
+                            currentBlock.y++;
+                            score += 10;
+                        }
+                        break;
+                    case ' ':
+                        while (!checkCollision(currentBlock, 0, 1)) {
+                            currentBlock.y++;
+                            score += 10;
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            };
+
+            function drawGame() {
+                if (!isPaused) {
+                    context.clearRect(0, 0, canvas.width, canvas.height);
+                    drawBoard();
+                    drawBlock(currentBlock);
+                    drawBlock(nextBlock, canvas.width - blockSize * 4, 0);
+                    drawScore();
+                }
+                requestAnimationFrame(drawGame);
+            }
+
+            function startGame() {
+                if (gameInterval) return;
+                gameInterval = setInterval(updateGame, 1000 / 2);
+            }
+
+            function pauseGame() {
+                clearInterval(gameInterval);
+                gameInterval = null;
+            }
+
+            function restartGame() {
+                board.length = 0;
+                Object.assign(board, createEmptyBoard());
+                currentBlock = createBlock();
+                nextBlock = createBlock();
+                score = 0;
+                startGame();
+            }
+
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    if (!gameInterval) {
+                        startGame();
+                    } else {
+                        pauseGame();
+                    }
+                } else if (event.key === 'r' || event.key === 'R') {
+                    restartGame();
+                }
+            });
+
+            drawGame();
+        }
+    </script>
+</body>
+</html>
